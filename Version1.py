@@ -1,3 +1,4 @@
+import kagglehub
 import os
 import random
 import shutil
@@ -8,11 +9,11 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.optimizers import SGD
 from sklearn.metrics import classification_report
-from tensorflow.keras.models import load_model
-from pyimagesearch.resnet import ResNet   
+from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Flatten, GlobalAveragePooling2D
 
-
-ORIG_INPUT_DATASET = "malaria/cell_images"
+# Constants
 BASE_PATH = "malaria"
 TRAIN_PATH = os.path.sep.join([BASE_PATH, "training"])
 VAL_PATH = os.path.sep.join([BASE_PATH, "validation"])
@@ -20,18 +21,26 @@ TEST_PATH = os.path.sep.join([BASE_PATH, "testing"])
 TRAIN_SPLIT = 0.8
 VAL_SPLIT = 0.1
 
-#validation, and testing splits
+# Download the dataset using KaggleHub
+print("[INFO] Downloading dataset...")
+path = kagglehub.dataset_download("iarunava/cell-images-for-detecting-malaria")
+print(f"[INFO] Dataset downloaded to: {path}")
+
+# Extract the downloaded dataset if it's zipped
+dataset_dir = os.path.join(path, "cell_images")  # The directory containing the images
+
+# Check if the directory exists and print the paths
+if not os.path.exists(dataset_dir):
+    print(f"[ERROR] Dataset not found in path {dataset_dir}")
+    exit()
+
+# Data Split Function
 def create_data_splits():
-    # Verify dataset path exists (idk if we need this)
-    if not os.path.exists(ORIG_INPUT_DATASET):
-        print(f"[ERROR] Dataset not found at {ORIG_INPUT_DATASET}. Please check the path.")
-        exit()
-    
-    imagePaths = list(paths.list_images(ORIG_INPUT_DATASET))
+    imagePaths = list(paths.list_images(dataset_dir))
     random.seed(42)
     random.shuffle(imagePaths)
     
-    # Split data into training, validation, and testing
+    # Split into train, validation, and test datasets
     i = int(len(imagePaths) * TRAIN_SPLIT)
     trainPaths = imagePaths[:i]
     testPaths = imagePaths[i:]
@@ -40,15 +49,11 @@ def create_data_splits():
     valPaths = trainPaths[:i]
     trainPaths = trainPaths[i:]
     
-    # Create dataset splits
-    datasets = [
-        ("training", trainPaths, TRAIN_PATH),
-        ("validation", valPaths, VAL_PATH),
-        ("testing", testPaths, TEST_PATH),
-    ]
+    datasets = [("training", trainPaths, TRAIN_PATH), 
+                ("validation", valPaths, VAL_PATH), 
+                ("testing", testPaths, TEST_PATH)]
     
     for (dType, imagePaths, baseOutput) in datasets:
-        print(f"[INFO] Building '{dType}' split...")
         if not os.path.exists(baseOutput):
             os.makedirs(baseOutput)
         for inputPath in imagePaths:
@@ -59,69 +64,71 @@ def create_data_splits():
                 os.makedirs(labelPath)
             shutil.copy2(inputPath, os.path.sep.join([labelPath, filename]))
 
-# Define learning rate schedule
+# Learning rate decay function
 def poly_decay(epoch):
     maxEpochs = NUM_EPOCHS
     baseLR = INIT_LR
-    power = 1.0
-    return baseLR * (1 - (epoch / float(maxEpochs))) ** power
+    return baseLR * (1 - (epoch / float(maxEpochs))) ** 1.0
 
-# Train and evaluate the model
+# Model training function
 def train_model():
-    # Count total images in each dataset
     totalTrain = len(list(paths.list_images(TRAIN_PATH)))
     totalVal = len(list(paths.list_images(VAL_PATH)))
     totalTest = len(list(paths.list_images(TEST_PATH)))
     
-    # Data augmentation
-    trainAug = ImageDataGenerator(
-        rescale=1 / 255.0,
-        rotation_range=20,
-        zoom_range=0.05,
-        width_shift_range=0.05,
-        height_shift_range=0.05,
-        shear_range=0.05,
-        horizontal_flip=True,
-        fill_mode="nearest",
-    )
+    # Data Augmentation
+    trainAug = ImageDataGenerator(rescale=1 / 255.0, rotation_range=20, 
+                                  zoom_range=0.05, width_shift_range=0.05,
+                                  height_shift_range=0.05, shear_range=0.05,
+                                  horizontal_flip=True, fill_mode="nearest")
+    
     valAug = ImageDataGenerator(rescale=1 / 255.0)
     
-    # Load data generators
-    trainGen = trainAug.flow_from_directory(
-        TRAIN_PATH, class_mode="categorical", target_size=(64, 64),
-        color_mode="rgb", shuffle=True, batch_size=BS)
-    valGen = valAug.flow_from_directory(
-        VAL_PATH, class_mode="categorical", target_size=(64, 64),
-        color_mode="rgb", shuffle=False, batch_size=BS)
-    testGen = valAug.flow_from_directory(
-        TEST_PATH, class_mode="categorical", target_size=(64, 64),
-        color_mode="rgb", shuffle=False, batch_size=BS)
+    # Data generators for training, validation, and testing
+    trainGen = trainAug.flow_from_directory(TRAIN_PATH, class_mode="categorical", 
+                                            target_size=(64, 64), color_mode="rgb", 
+                                            shuffle=True, batch_size=32)
+    valGen = valAug.flow_from_directory(VAL_PATH, class_mode="categorical", 
+                                        target_size=(64, 64), color_mode="rgb", 
+                                        shuffle=False, batch_size=32)
+    testGen = valAug.flow_from_directory(TEST_PATH, class_mode="categorical", 
+                                         target_size=(64, 64), color_mode="rgb", 
+                                         shuffle=False, batch_size=32)
     
-    # Build and compile the model
-    print("[INFO] Compiling model...")
-    model = ResNet.build(64, 64, 3, 2, (3, 4, 6), (64, 128, 256, 512), reg=0.0005)
+    # Build the ResNet50 model
+    baseModel = ResNet50(weights="imagenet", include_top=False, input_shape=(64, 64, 3))
+    model = Sequential()
+    model.add(baseModel)
+    model.add(GlobalAveragePooling2D())
+    model.add(Dense(2, activation="softmax"))  # Output layer for 2 classes (Parasitized, Uninfected)
+
+    # Freeze layers of ResNet50 except the last block
+    for layer in baseModel.layers:
+        layer.trainable = False
+    
+    # Compile the model
     opt = SGD(learning_rate=INIT_LR, momentum=0.9)
-    model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"])
-    
+    model.compile(loss="categorical_crossentropy", optimizer=opt, metrics=["accuracy"])
+
     # Train the model
     print("[INFO] Training model...")
     callbacks = [LearningRateScheduler(poly_decay)]
     H = model.fit(
-        x=trainGen, steps_per_epoch=totalTrain // BS,
-        validation_data=valGen, validation_steps=totalVal // BS,
+        x=trainGen, steps_per_epoch=totalTrain // 32,
+        validation_data=valGen, validation_steps=totalVal // 32,
         epochs=NUM_EPOCHS, callbacks=callbacks)
     
     # Evaluate the model
     print("[INFO] Evaluating network...")
     testGen.reset()
-    predIdxs = model.predict(x=testGen, steps=(totalTest // BS) + 1)
+    predIdxs = model.predict(x=testGen, steps=(totalTest // 32) + 1)
     predIdxs = np.argmax(predIdxs, axis=1)
     print(classification_report(testGen.classes, predIdxs,
                                 target_names=testGen.class_indices.keys()))
     
     return H
 
-# Plotting results
+# Plot training results
 def plot_training(H):
     N = NUM_EPOCHS
     plt.style.use("ggplot")
@@ -136,13 +143,10 @@ def plot_training(H):
     plt.legend(loc="lower left")
     plt.savefig("plot.png")
 
-# Main Script
+# Main script execution
 if __name__ == "__main__":
-    # Hyperparameters
-    NUM_EPOCHS = 50
-    INIT_LR = 1e-1
-    BS = 32
-    
+    NUM_EPOCHS = 50  # Total number of epochs
+    INIT_LR = 1e-4   # Initial learning rate
     create_data_splits()
     history = train_model()
     plot_training(history)
