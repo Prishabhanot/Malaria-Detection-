@@ -21,7 +21,7 @@ TRAIN_SPLIT = 0.8
 VAL_SPLIT = 0.1
 
 # Path to the manually downloaded dataset
-dataset_dir = "path_to_downloaded_dataset/cell_images"  # Replace with your actual path
+dataset_dir = "C:/path_to_your_downloaded_folder/cell_images"  # Update with the correct path
 
 # Check if the directory exists and print the paths
 if not os.path.exists(dataset_dir):
