@@ -1,4 +1,3 @@
-import kagglehub
 import os
 import random
 import shutil
@@ -21,13 +20,8 @@ TEST_PATH = os.path.sep.join([BASE_PATH, "testing"])
 TRAIN_SPLIT = 0.8
 VAL_SPLIT = 0.1
 
-# Download the dataset using KaggleHub
-print("[INFO] Downloading dataset...")
-path = kagglehub.dataset_download("iarunava/cell-images-for-detecting-malaria")
-print(f"[INFO] Dataset downloaded to: {path}")
-
-# Extract the downloaded dataset if it's zipped
-dataset_dir = os.path.join(path, "cell_images")  # The directory containing the images
+# Path to the manually downloaded dataset
+dataset_dir = "path_to_downloaded_dataset/cell_images"  # Replace with your actual path
 
 # Check if the directory exists and print the paths
 if not os.path.exists(dataset_dir):
