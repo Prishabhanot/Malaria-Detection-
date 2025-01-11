@@ -2,7 +2,7 @@ Malaria continues to be one of the most pressing global health challenges, parti
  
 The medical dataset inputted has been retrived from Kaggle. 
 
-<u>**Features**</u>
+<u>**Important Features**</u>
 
 **Data Preparation:** Splits the dataset into training, validation, and test sets.<br>
 **Image Augmentation:**  Applies various transformations (e.g., rotation, zoom, shift) to training images to improve model generalization.<br>
