@@ -12,18 +12,22 @@ from tensorflow.keras.applications import ResNet50
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Flatten, GlobalAveragePooling2D
 
+# Set up variables that will help the program know where to find the data in these 
+# Specific folders for training, validating, and testing
+
 BASE_PATH = "malaria"
 TRAIN_PATH = os.path.sep.join([BASE_PATH, "training"])
 VAL_PATH = os.path.sep.join([BASE_PATH, "validation"])
 TEST_PATH = os.path.sep.join([BASE_PATH, "testing"])
-TRAIN_SPLIT = 0.8
-VAL_SPLIT = 0.1
+TRAIN_SPLIT = 0.8 #the ratio of data we want to use for training
+VAL_SPLIT = 0.1 #the ratio of data we want to use for validation
 
 dataset_dir = "/Users/yugdv/Malaria-Detection-/malaria"
+# This path is specific to the team member's laptop and may need to be updated for different environments
 
-if not os.path.exists(dataset_dir):
-    print(f"[ERROR] Dataset not found in path {dataset_dir}")
-    exit()
+# This function splits all your images into training, validation, and testing groups based on predefined percentages (80/10/10)
+# It organizes the images into folders based on their labels (e.g., "infected" and "uninfected") within these groups
+# It makes sure the images are ready for use in a ML model
 
 def create_data_splits():
     imagePaths = list(paths.list_images(dataset_dir))
@@ -53,15 +57,24 @@ def create_data_splits():
                 os.makedirs(labelPath)
             shutil.copy2(inputPath, os.path.sep.join([labelPath, filename]))
 
+# The function makes the learning rate smaller over time,
+# Which helps the model settle into an optimal solution more effectively as it trains
+
 def poly_decay(epoch):
     maxEpochs = NUM_EPOCHS
     baseLR = INIT_LR
     return baseLR * (1 - (epoch / float(maxEpochs))) ** 1.0
 
+# Function counts how many images are in the training, validation, and testing datasets
+# These numbers help set up the training process
+
 def train_model():
     totalTrain = len(list(paths.list_images(TRAIN_PATH)))
     totalVal = len(list(paths.list_images(VAL_PATH)))
     totalTest = len(list(paths.list_images(TEST_PATH)))
+
+# Creates slightly modified versions of the training images 
+#(e.g., rotated, zoomed, shifted) to help the model learn better by seeing the data
     
     trainAug = ImageDataGenerator(rescale=1 / 255.0, rotation_range=20, 
                                   zoom_range=0.05, width_shift_range=0.05,
@@ -73,6 +86,9 @@ def train_model():
     trainGen = trainAug.flow_from_directory(TRAIN_PATH, class_mode="categorical", 
                                             target_size=(64, 64), color_mode="rgb", 
                                             shuffle=True, batch_size=32)
+
+# Prepares the training images in batches, applies augmentation, and ensures they are ready for the model
+
     valGen = valAug.flow_from_directory(VAL_PATH, class_mode="categorical", 
                                         target_size=(64, 64), color_mode="rgb", 
                                         shuffle=False, batch_size=32)
@@ -80,6 +96,12 @@ def train_model():
                                          target_size=(64, 64), color_mode="rgb", 
                                          shuffle=False, batch_size=32)
     
+#T /his segment of the code uses a pre-trained ResNet50 model, then adds layers on top of the base model, 
+#such as a pooling layer to simplify the output, and a dense layer with 2 outputs (for 'Infected' and 'Uninfected') 
+#and softmax activation (which ensures that the output values are non-negative and sum to 1, making the predictions valid as negative values 
+#or values outside the range of 0 to 1 do not make sense in probability). Additionally, the layers are frozen to keep the ResNet50 layers unchanged
+#during training, which speeds up learning and helps avoid overfitting
+
     baseModel = ResNet50(weights="imagenet", include_top=False, input_shape=(64, 64, 3))
     model = Sequential()
     model.add(baseModel)
@@ -108,6 +130,9 @@ def train_model():
     
     return H
 
+# Function helps you see if the model is getting better over time by comparing its loss and 
+#accuracy during training and validation, and then saves the graph for you to look at later
+
 def plot_training(H):
     N = NUM_EPOCHS
     plt.style.use("ggplot")
@@ -121,6 +146,11 @@ def plot_training(H):
     plt.ylabel("Loss/Accuracy")
     plt.legend(loc="lower left")
     plt.savefig("plot.png")
+
+# This function defines the number of training epochs and the initial learning rate
+# It then splits the dataset into training, validation, and test sets using create_data_splits()
+# After function trains the model using the train_model() function and stores the training history 
+# Finally, it plots the training and validation loss and accuracy over time with plot_training()
 
 if __name__ == "__main__":
     NUM_EPOCHS = 50
